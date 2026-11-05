@@ -33,6 +33,7 @@ CONTROL_METHODS = {
     9: "Weheat Intelligence",
 }
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+DHW_COMFORT_PREFERENCES = {"Safe": 1, "Balanced": 2, "Eco": 3}
 
 
 def integer(value: object, minimum: int, maximum: int) -> bool:
@@ -63,6 +64,16 @@ def dhw_intelligence_properties(current: Settings) -> Settings:
     """Preserve a known comfort preference; otherwise use the app's Balanced default."""
     preference = current.get("dhwComfortPreference")
     return {"DhwComfortPreference": preference if type(preference) is int and preference in (1, 2, 3) else 2}
+
+
+def dhw_comfort_available(current: Settings) -> bool:
+    """Never invent a preference or enable Intelligence to expose this control."""
+    return (
+        dhw_intelligence_available(current)
+        and current.get("dhwScheduleEnabled") == 3
+        and type(current.get("dhwComfortPreference")) is int
+        and current.get("dhwComfortPreference") in DHW_COMFORT_PREFERENCES.values()
+    )
 
 
 def schedule_available(current: Settings) -> bool:
@@ -103,6 +114,15 @@ def curve_point(current: Settings, index: int, value: float) -> Settings:
 
 def validate_write(settings: Settings, current: Settings, properties: Settings | None = None) -> None:
     """Validate against freshly read state immediately before submission."""
+    if not settings and properties and set(properties) == {"DhwComfortPreference"}:
+        preference = properties["DhwComfortPreference"]
+        if (
+            dhw_comfort_available(current)
+            and type(preference) is int
+            and preference in DHW_COMFORT_PREFERENCES.values()
+        ):
+            return
+        raise WeheatError("Hot-water Intelligence comfort preference is unavailable or invalid")
     if set(settings) == {"DhwScheduleEnabled"}:
         mode = settings["DhwScheduleEnabled"]
         if dhw_intelligence_available(current) and type(mode) is int:
@@ -113,7 +133,7 @@ def validate_write(settings: Settings, current: Settings, properties: Settings |
                     return
         raise WeheatError("Hot-water Intelligence is unavailable or its mode/comfort payload is invalid")
     if properties:
-        raise WeheatError("Properties are only supported for enabling hot-water Intelligence")
+        raise WeheatError("Properties are only supported for hot-water Intelligence and its comfort preference")
     if set(settings) == {"DhwBoostEndTime"}:
         end = settings["DhwBoostEndTime"]
         if (

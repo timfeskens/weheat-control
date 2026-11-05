@@ -45,12 +45,57 @@ properties are persisted before submission; successful status is verified
 against their readback. Missing comfort readback leaves success unverified.
 Off sends only mode 0, never a target-temperature or heating-control write.
 
+## Official integration boundary
+
+Home Assistant Core `2026.10.4` and `2026.11.0` use `weheat==2026.9.3`
+and `https://api.weheat.nl/third_party` for telemetry. The built-in integration
+loads sensor and binary-sensor platforms, not control platforms. Keep it for
+temperatures, power/COP, energy, operating/pump states and cooling diagnostics.
+Do not reimplement those through the consumer app API or share its refresh
+tokens. The custom integration polls settings only for its controls and durable
+command verification; configured-setting readbacks have different semantics
+from active/measured telemetry and retain their existing IDs.
+
+Sources: Home Assistant Core `homeassistant/components/weheat/{manifest,
+__init__,coordinator,sensor,binary_sensor,const}` at tags `2026.10.4` and
+`2026.11.0`; manufacturer client `wefabricate/wh-python`.
+
+## Additional control investigation
+
+### DHW Intelligence comfort preference
+
+Supplemental Hermes #13345 defines None=0, Safe=1, Balanced=2, Eco=3.
+#31151 offers Eco/Balanced/Safe in the consumer UI. #31144 submits only
+`properties: {DhwComfortPreference: <choice>}`; #21053 copies the absent
+settings into an empty object before forwarding, so the board PATCH is
+`settings: {}, properties: {...}, updateImmediately: false`.
+#23702 reads `dhwComfortPreference` from installation settings; it is not a
+measured water temperature. The new select conservatively requires DHW,
+Intelligence mode 3 and a valid reported preference. Missing data never becomes
+an invented Balanced state. Selection does not change mode or target.
+Property-only intent is persisted before submission and requires exact integer
+readback to become verified success. Static evidence does not establish current
+backend acceptance or a particular installation's property support.
+
+### Cooling: traced but deliberately not exposed
+
+#12765 defines CoolingEnabled Unset=0, Off=1, Enabled=2; #12763 defines
+CoolingControlMethod None=0, FixedSetpoint=1, CoolingCurve=2,
+WeheatIntelligence=3, OpenTherm=4. #32391 constructs a modern flag-only
+write except when enabling an unset method (also selects CoolingCurve=2),
+and a legacy method-changing fallback. These are not a universally reversible
+boolean: legacy off loses the previous method. #32397/#32406/#32414 gate
+enabling on explicit system suitability and condensation-risk acceptance;
+#32278 likewise requires risk consent for cooling-curve edits. No unguarded
+switch, installer/protection override or guessed restore behavior is added.
+
 ## Implemented controls
 
 | Control | Read → write | Recovered app behavior / source |
 | --- | --- | --- |
 | DHW boost | `dhwBoostEndTime` → `DhwBoostEndTime` | String Unix seconds for writes; #21094 (on), #21049 (off). ISO timestamp observed in live read. Buttons request 30/60 minutes or stop. |
 | DHW target | `dhwTargetTemperature` → `DhwTargetTemperature` | 40–60 °C, integer steps. Available only with DHW present and mode `dhwScheduleEnabled=0` (fixed). Never switch out of Intelligence/schedule automatically. |
+| DHW Intelligence comfort | `dhwComfortPreference` → `properties.DhwComfortPreference` | Safe=1, Balanced=2, Eco=3; #13345, #31144, #31151. Property-only write; requires valid current readback and Intelligence mode. |
 | Day quiet | `performanceModePreset` → `PerformanceModePreset` | #32805:23–43, #32837:22–59, #32827:20–28. Values 0 Normal, 1 Background chatter, 2 Light rain, 3 Library, 4 Whisper. |
 | Scheduled night quiet | `silentHoursScheduledPreset` → `SilentHoursScheduledPreset` | #32807:23–55, #32854:23–81, #32819:5–21, #32820:142–147. Values 0 schedule disabled, 1 Normal, 2 Background chatter, 3 Light rain, 4 Library, 5 off during scheduled hours, 6 Whisper, 7 Minimum. Value 7 is model-restricted and not exposed without verified model identity. |
 | Quiet schedule | `silentHours/Minutes{Weekday}{Start/Stop}` → same names capitalized | Require all 28 current fields. Edit one hour/minute pair, preserving other weekdays. Device-local time semantics; no inferred timezone conversion. Entities enabled by default. |

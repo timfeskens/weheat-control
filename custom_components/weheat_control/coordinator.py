@@ -24,6 +24,8 @@ _LOGGER = logging.getLogger(__name__)
 def readback_matches(settings: Settings, requested: dict[str, Json]) -> bool:
     for key, value in requested.items():
         actual = settings.get(key[0].lower() + key[1:])
+        if key == "DhwComfortPreference" and (type(actual) is not int or type(value) is not int):
+            return False
         if key == "DhwBoostEndTime" and isinstance(actual, str) and not actual.isdigit():
             try:
                 date = datetime.fromisoformat(actual.replace("Z", "+00:00"))
@@ -170,9 +172,9 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
                 settings = await self.api.settings(str(self.entry.data[INSTALLATION_ID]))
                 if self.operation.get("state") in ("succeeded_unverified", "mismatch"):
                     requested = self.operation.get("settings")
-                    if isinstance(requested, dict) and requested:
+                    properties = self.operation.get("properties")
+                    if isinstance(requested, dict) and (requested or isinstance(properties, dict) and properties):
                         matches = readback_matches(settings, requested)
-                        properties = self.operation.get("properties")
                         if isinstance(properties, dict) and properties:
                             matches = matches and readback_matches(settings, properties)
                         self.operation["readback_matches"] = matches

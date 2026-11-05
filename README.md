@@ -7,10 +7,29 @@ and supported temperature settings directly from Home Assistant.
 [![Add to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=timfeskens&repository=weheat-control&category=integration)
 [![Checks](https://github.com/timfeskens/weheat-control/actions/workflows/check.yml/badge.svg)](https://github.com/timfeskens/weheat-control/actions/workflows/check.yml)
 
-> **Experimental:** cloud reads have been verified, but installation in a running
-> Home Assistant instance and real device commands have not yet been verified.
+> **Experimental:** installation and cloud reads have been verified in a running
+> Home Assistant instance; not every control has been tested against a real device.
 > Do not rely on this integration for unattended control. This project is not
 > affiliated with or supported by Weheat.
+
+## Use alongside the official Weheat integration
+
+Keep Home Assistant's built-in [Weheat integration](https://www.home-assistant.io/integrations/weheat/)
+for measured temperatures, power, COP, energy totals, compressor/pump states,
+and cooling diagnostics. It uses Weheat's official `weheat` Python client and
+`/third_party` API. This custom integration complements it with controls the
+built-in integration does not provide; it does not replace it or duplicate its
+telemetry polling.
+
+Set up each integration separately under **Settings → Devices & services**.
+Their credentials, tokens, polling, and device entries remain independent;
+do not copy refresh tokens between them. No dependency on the built-in
+integration's private runtime objects is required.
+
+The custom readback/diagnostic sensors are retained to confirm requested
+settings and track commands, not to replace official telemetry. In particular,
+the configured fixed hot-water target is not necessarily the current active
+target reported by the official integration. Existing entity IDs are preserved.
 
 ## Requirements
 
@@ -74,6 +93,7 @@ complete the reauthentication flow offered by Home Assistant.
 | Quiet schedule times | Start and stop for each weekday: 14 entities using device-local time |
 | Hot-water target temperature | 40–60 °C, in 1 °C steps, when DHW is available and uses fixed-setpoint mode |
 | Hot-water Weheat Intelligence | On: Intelligence for hot water. Off: fixed-temperature mode. Does not control space heating. |
+| Hot-water Intelligence comfort preference | Safe, Balanced, Eco; available only in Intelligence mode with a valid reported preference |
 | Heating-curve points | 18–60 °C, in 1 °C steps, for Heating curve and On/off thermostat control methods |
 | Hot-water target readback | Requested target temperature, not measured water temperature |
 | Hot-water boost end | Reported boost end time |
@@ -105,11 +125,19 @@ Enabling preserves a valid reported DHW comfort preference (Safe, Balanced, Eco)
 otherwise uses the official app's Balanced default. Unknown DHW availability or
 mode makes the switch unavailable. Its state follows readback, not the submitted
 command; the same durable request gate and no-retry protection apply.
+The **Hot-water Intelligence comfort preference** select sends only the chosen
+preference, not a temperature or mode change. It never enables Intelligence
+automatically. Missing or invalid comfort readback makes the select unavailable;
+no preference is guessed for its displayed state or editing. Cloud command
+success is only marked verified after an exact preference readback.
 Cooling controls, heating-mode changes, whole-system power switching, room
 thermostats, and installer/protection settings are not supported.
 The official app's inspected Intelligence toggle writes hot-water mode only.
 A whole-system Intelligence switch is not exposed: its write/restore contract
 has not been verified. Heating control method and DHW Intelligence are distinct.
+Although app cooling payloads can be traced, enabling cooling requires separate
+system-suitability and condensation-risk acknowledgements in the app. An
+unguarded cooling switch or cooling-curve editor is intentionally not exposed.
 
 ## Command status and troubleshooting
 
