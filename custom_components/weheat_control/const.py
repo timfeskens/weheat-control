@@ -1,0 +1,10 @@
+"""Constants for the unofficial Weheat integration."""
+
+DOMAIN = "weheat_control"
+ISSUER = "https://auth.weheat.nl/realms/Weheat"
+API = "https://api.weheat.nl/api/v1"
+CLIENT_ID = "wh-app-consumer"
+REDIRECT_URI = "weheat://auth"
+INSTALLATION_ID = "installation_id"
+BOARD_ID = "board_id"
+TOKENS = "tokens"

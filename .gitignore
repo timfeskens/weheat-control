@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.state/
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+python-test-results.xml
+.DS_Store

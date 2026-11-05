@@ -1,0 +1,29 @@
+{
+  "name": "weheat-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "tsx src/cli.ts setup",
+    "login": "tsx --env-file-if-exists=.env src/cli.ts login",
+    "devices": "tsx --env-file=.env src/cli.ts devices",
+    "start": "tsx --env-file=.env src/server.ts",
+    "boost": "tsx --env-file=.env src/cli.ts boost",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "tsx --test test/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "ky": "^2.2.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3"
+  }
+}

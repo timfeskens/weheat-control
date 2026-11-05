@@ -1,0 +1,161 @@
+"""Polling and durable serialized settings requests."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from collections.abc import Callable
+from datetime import datetime, timedelta
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from .api import AuthenticationError, Json, Settings, WeheatApi, WeheatError, json_value, object_value
+from .const import BOARD_ID, DOMAIN, INSTALLATION_ID
+from .controls import validate_write
+from .journal import OperationJournal
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def readback_matches(settings: Settings, requested: dict[str, Json]) -> bool:
+    for key, value in requested.items():
+        actual = settings.get(key[0].lower() + key[1:])
+        if key == "DhwBoostEndTime" and isinstance(actual, str) and not actual.isdigit():
+            try:
+                date = datetime.fromisoformat(actual.replace("Z", "+00:00"))
+                if date.tzinfo is None:
+                    return False
+                actual = str(int(date.timestamp()))
+            except ValueError:
+                return False
+        if actual != value and str(actual) != str(value):
+            return False
+    return True
+
+
+class WeheatCoordinator(DataUpdateCoordinator[Settings]):
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, api: WeheatApi) -> None:
+        super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=timedelta(seconds=30))
+        self.api = api
+        self.entry = entry
+        self.operation: dict[str, Json] = {}
+        self._store = OperationJournal(hass, entry.entry_id)
+        self._write_lock = asyncio.Lock()
+
+    async def async_load_operation(self) -> None:
+        saved = await self._store.async_load()
+        if saved is not None:
+            self.operation = object_value(json_value(saved))
+            # Only our verified terminal records can release the mutation gate.
+            status = self.operation.get("status")
+            if self.operation.get("state") == "cancelled_before_submission":
+                self.operation["terminal"] = True
+            elif type(status) is not int or not 2 <= status <= 11:
+                self.operation["terminal"] = False
+
+    async def _save_operation(self) -> None:
+        try:
+            await self._store.async_save(self.operation)
+        except OSError, ValueError:
+            raise HomeAssistantError(
+                "Could not persist the settings journal. Device writes are blocked; inspect storage."
+            ) from None
+
+    async def _check_operation(self) -> None:
+        if not self.operation or self.operation.get("terminal") is True:
+            return
+        request_id = self.operation.get("request_id")
+        board = self.operation.get("board_id")
+        if not isinstance(request_id, str) or not isinstance(board, str):
+            return  # Ambiguous submission: keep blocking writes across restarts.
+        status = await self.api.status(board, request_id)
+        states = {
+            0: "pending",
+            1: "executing",
+            2: "succeeded_unverified",
+            3: "cancelled",
+            4: "failed",
+            5: "mismatch",
+            6: "failed_device_wrong_state",
+            7: "failed_wrong_execution_order",
+            8: "failed_device_disconnected",
+            9: "failed_settings_request_mismatch",
+            10: "failed_settings_key_not_found",
+            11: "failed_another_request_executing",
+        }
+        self.operation.update(status=status, state=states.get(status, "failed"), terminal=status >= 2)
+        await self._save_operation()
+
+    async def _async_update_data(self) -> Settings:
+        try:
+            # Polling must not race an operation record being submitted/saved.
+            async with self._write_lock:
+                await self._check_operation()
+                settings = await self.api.settings(str(self.entry.data[INSTALLATION_ID]))
+                if self.operation.get("state") in ("succeeded_unverified", "mismatch"):
+                    requested = self.operation.get("settings")
+                    if isinstance(requested, dict) and requested:
+                        matches = readback_matches(settings, requested)
+                        self.operation["readback_matches"] = matches
+                        if matches and self.operation.get("status") == 2:
+                            self.operation["state"] = "succeeded"
+                        await self._save_operation()
+                return settings
+        except AuthenticationError as error:
+            raise ConfigEntryAuthFailed(str(error)) from None
+        except WeheatError as error:
+            raise UpdateFailed(str(error)) from None
+
+    async def async_write(self, command: Settings | Callable[[Settings], Settings]) -> None:
+        """Save intent before sending. Never resubmit after an uncertain outcome."""
+        if self._write_lock.locked():
+            raise HomeAssistantError("A settings request is already in progress")
+        async with self._write_lock:
+            if self.operation and self.operation.get("terminal") is not True:
+                raise HomeAssistantError(
+                    "Previous settings request is unresolved. Check request status; do not retry blindly."
+                )
+            try:
+                current = await self.api.settings(str(self.entry.data[INSTALLATION_ID]))
+                settings = command(current) if callable(command) else command
+                validate_write(settings, current)
+                selected = next(
+                    (item for item in await self.api.installations() if item.id == self.entry.data[INSTALLATION_ID]),
+                    None,
+                )
+                if not selected or selected.board_id != self.entry.data[BOARD_ID]:
+                    raise HomeAssistantError(
+                        "Selected control board is no longer accessible or has changed; set up again"
+                    )
+                self.operation = {
+                    "state": "submitting",
+                    "terminal": False,
+                    "board_id": selected.board_id,
+                    "settings": dict(settings),
+                    "created_at": int(time.time()),
+                }
+                await self._save_operation()
+                try:
+                    request_id = await self.api.patch(selected.board_id, settings)
+                    self.operation.update(request_id=request_id, state="pending")
+                except Exception, asyncio.CancelledError:
+                    self.operation["state"] = "unknown"
+                    await self._save_operation()
+                    # The intent remains durable even if cancellation prevents cleanup.
+                    if asyncio.current_task() and asyncio.current_task().cancelling():
+                        raise
+                    raise HomeAssistantError(
+                        "Submission outcome is uncertain. Do not retry; check the official app and request state."
+                    ) from None
+                await self._save_operation()
+            except AuthenticationError as error:
+                self.entry.async_start_reauth(self.hass)
+                raise HomeAssistantError(str(error)) from None
+            except WeheatError as error:
+                raise HomeAssistantError(str(error)) from None
+        # This is a request, not an optimistic assertion that the setting changed.
+        await self.async_request_refresh()

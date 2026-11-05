@@ -1,0 +1,21 @@
+{
+  "title": "Weheat Control",
+  "config": {
+    "step": {
+      "login": {
+        "title": "Sign in to Weheat",
+        "description": "Open [Weheat login]({login_url}) in your browser. Sign in, then copy the complete weheat://auth URL from the browser's open-app prompt without opening the app. Paste it below. This is an unofficial integration using the mobile app's public PKCE client. Do not share the callback URL. Setup does not change device settings. After login, using a supported control sends a real device-settings request.",
+        "data": {"callback_url": "Complete callback URL"},
+        "data_description": {"callback_url": "The one-use weheat://auth link returned by this login attempt. It is verified against this flow's OAuth state."}
+      },
+      "installation": {
+        "title": "Select your installation",
+        "description": "Choose the installation to control. If discovery failed, submit again to retry with the saved login from this setup flow.",
+        "data": {"installation_id": "Installation"},
+        "data_description": {"installation_id": "Only installations with an accessible heat-pump control board are listed."}
+      }
+    },
+    "error": {"invalid_auth": "Login was rejected or the callback/state did not match. Use the new login link and try again.", "cannot_connect": "Could not connect to Weheat. Try again."},
+    "abort": {"already_configured": "This installation is already configured.", "invalid_auth": "Login expired. Start setup again.", "no_devices": "No installation with an accessible control board was found.", "wrong_account": "Select the same installation when reauthenticating.", "reauth_successful": "Weheat login renewed."}
+  }
+}
