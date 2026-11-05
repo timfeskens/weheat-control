@@ -38,8 +38,8 @@ installer parameters, legionella and protection controls remain unsupported.
 ## Live read-only observations (2026-11-05)
 
 Authenticated installation settings read returns a bare camelCase object.
-With `x-version: 4.5.14` it returns 505; without it, 200. The native and TS
-clients omit the header **only for explicitly verified reads**. Write and
+With `x-version: 4.5.14` it returns 505; without it, 200. The integration
+omits the header **only for explicitly verified reads**. Write and
 status route version compatibility remains unverified. Never automatically
 replay a mutation with another header.
 

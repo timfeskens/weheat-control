@@ -360,7 +360,7 @@ async def test_failure_status_retains_specific_device_reason(hass) -> None:
         assert restored.operation["terminal"] is True
 
 
-async def test_entry_setup_and_unload_wire_runtime_without_node(hass) -> None:
+async def test_entry_setup_and_unload_wire_runtime(hass) -> None:
     entry = config_entry()
     hass.config_entries = Mock()
     with (

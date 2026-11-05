@@ -1,4 +1,4 @@
-"""Unofficial native Weheat cloud integration. No Node.js bridge required."""
+"""Unofficial Weheat cloud integration for Home Assistant."""
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
