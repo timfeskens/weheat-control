@@ -172,6 +172,9 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
                     requested = self.operation.get("settings")
                     if isinstance(requested, dict) and requested:
                         matches = readback_matches(settings, requested)
+                        properties = self.operation.get("properties")
+                        if isinstance(properties, dict) and properties:
+                            matches = matches and readback_matches(settings, properties)
                         self.operation["readback_matches"] = matches
                         if matches and self.operation.get("status") == 2:
                             self.operation["state"] = "succeeded"
@@ -182,7 +185,12 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
         except WeheatError as error:
             raise UpdateFailed(str(error)) from None
 
-    async def async_write(self, command: Settings | Callable[[Settings], Settings]) -> None:
+    async def async_write(
+        self,
+        command: Settings | Callable[[Settings], Settings],
+        *,
+        properties: Settings | Callable[[Settings], Settings] | None = None,
+    ) -> None:
         """Save intent before sending. Never resubmit after an uncertain outcome."""
         if self._write_lock.locked():
             raise HomeAssistantError("A settings request is already in progress")
@@ -194,7 +202,8 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
             try:
                 current = await self.api.settings(str(self.entry.data[INSTALLATION_ID]))
                 settings = command(current) if callable(command) else command
-                validate_write(settings, current)
+                resolved_properties = properties(current) if callable(properties) else properties
+                validate_write(settings, current, resolved_properties)
                 selected = next(
                     (item for item in await self.api.installations() if item.id == self.entry.data[INSTALLATION_ID]),
                     None,
@@ -214,9 +223,14 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
                     "created_at": int(time.time()),
                     "history": history,
                 }
+                if resolved_properties:
+                    self.operation["properties"] = dict(resolved_properties)
                 await self._save_operation()
                 try:
-                    request_id = await self.api.patch(selected.board_id, settings)
+                    if resolved_properties:
+                        request_id = await self.api.patch(selected.board_id, settings, resolved_properties)
+                    else:
+                        request_id = await self.api.patch(selected.board_id, settings)
                     self.operation.update(request_id=request_id, state="pending")
                 except (Exception, asyncio.CancelledError) as error:
                     # Only controlled metadata is retained, never exception text,

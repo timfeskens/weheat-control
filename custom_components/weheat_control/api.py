@@ -275,13 +275,16 @@ class WeheatApi:
                 settings[key] = [item for item in value if type(item) in (int, float)]
         return settings
 
-    async def patch(self, board_id: str, settings: Settings) -> str:
+    async def patch(self, board_id: str, settings: Settings, properties: Settings | None = None) -> str:
         from urllib.parse import quote
 
+        body: dict[str, Json] = {"settings": dict(settings), "updateImmediately": False}
+        if properties:
+            body["properties"] = dict(properties)
         response = await self.request(
             "PATCH",
             f"/control-boards/{quote(board_id, safe='')}/settings",
-            {"settings": dict(settings), "updateImmediately": False},
+            body,
         )
         try:
             data = object_value(response)

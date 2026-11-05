@@ -73,6 +73,7 @@ complete the reauthentication flow offered by Home Assistant.
 | Scheduled-night quiet preset | Separate night presets, including **Schedule disabled** and **Off during scheduled hours** |
 | Quiet schedule times | Start and stop for each weekday: 14 entities using device-local time |
 | Hot-water target temperature | 40–60 °C, in 1 °C steps, when DHW is available and uses fixed-setpoint mode |
+| Hot-water Weheat Intelligence | On: Intelligence for hot water. Off: fixed-temperature mode. Does not control space heating. |
 | Heating-curve points | 18–60 °C, in 1 °C steps, for Heating curve and On/off thermostat control methods |
 | Hot-water target readback | Requested target temperature, not measured water temperature |
 | Hot-water boost end | Reported boost end time |
@@ -95,7 +96,15 @@ when a supported control method is detected.
 - **Night presets:** “Schedule disabled” and “Off during scheduled hours” are
   different settings. The model-specific “Minimum” preset is not exposed.
 
-The integration never changes operating modes to make another control available.
+The integration never automatically changes operating modes to make another control available.
+The explicit **Hot-water Weheat Intelligence** switch is the exception you control:
+on selects DHW mode 3, off selects fixed-setpoint mode 0 (not the previous manual
+schedule). It does not send a target-temperature or space-heating change. After
+fixed mode is confirmed, the hot-water temperature control becomes available.
+Enabling preserves a valid reported DHW comfort preference (Safe, Balanced, Eco),
+otherwise uses the official app's Balanced default. Unknown DHW availability or
+mode makes the switch unavailable. Its state follows readback, not the submitted
+command; the same durable request gate and no-retry protection apply.
 Cooling controls, heating-mode changes, whole-system power switching, room
 thermostats, and installer/protection settings are not supported.
 The official app's inspected Intelligence toggle writes hot-water mode only.

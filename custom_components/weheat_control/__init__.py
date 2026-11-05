@@ -10,7 +10,7 @@ from .api import AuthenticationError, Tokens, WeheatApi
 from .const import TOKENS
 from .coordinator import WeheatCoordinator
 
-PLATFORMS = [Platform.BUTTON, Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.TIME]
+PLATFORMS = [Platform.BUTTON, Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH, Platform.TIME]
 type WeheatConfigEntry = ConfigEntry[WeheatCoordinator]
 
 

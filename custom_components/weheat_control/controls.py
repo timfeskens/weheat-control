@@ -50,6 +50,21 @@ def dhw_target_available(current: Settings) -> bool:
     )
 
 
+def dhw_intelligence_available(current: Settings) -> bool:
+    return (
+        type(current.get("dhwAvailable")) is int
+        and current.get("dhwAvailable") == 1
+        and type(current.get("dhwScheduleEnabled")) is int
+        and current.get("dhwScheduleEnabled") in (0, 2, 3)
+    )
+
+
+def dhw_intelligence_properties(current: Settings) -> Settings:
+    """Preserve a known comfort preference; otherwise use the app's Balanced default."""
+    preference = current.get("dhwComfortPreference")
+    return {"DhwComfortPreference": preference if type(preference) is int and preference in (1, 2, 3) else 2}
+
+
 def schedule_available(current: Settings) -> bool:
     return all(
         integer(current.get(f"silent{part}{day}{edge}"), 0, maximum)
@@ -86,8 +101,19 @@ def curve_point(current: Settings, index: int, value: float) -> Settings:
     return {"HeatingCurveY": updated, "ControlMethod": method}
 
 
-def validate_write(settings: Settings, current: Settings) -> None:
+def validate_write(settings: Settings, current: Settings, properties: Settings | None = None) -> None:
     """Validate against freshly read state immediately before submission."""
+    if set(settings) == {"DhwScheduleEnabled"}:
+        mode = settings["DhwScheduleEnabled"]
+        if dhw_intelligence_available(current) and type(mode) is int:
+            if mode == 0 and not properties:
+                return
+            if mode == 3 and properties == dhw_intelligence_properties(current):
+                if properties and type(properties.get("DhwComfortPreference")) is int:
+                    return
+        raise WeheatError("Hot-water Intelligence is unavailable or its mode/comfort payload is invalid")
+    if properties:
+        raise WeheatError("Properties are only supported for enabling hot-water Intelligence")
     if set(settings) == {"DhwBoostEndTime"}:
         end = settings["DhwBoostEndTime"]
         if (

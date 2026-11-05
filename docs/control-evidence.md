@@ -38,6 +38,13 @@ No whole-system setter was established in the saved disassembly. Do not expose
 a DHW switch under a whole-system name or assume changing `ControlMethod` is
 equivalent. Backend side effects and whole-system restoration remain unknown.
 
+The native **Hot-water Weheat Intelligence** switch implements this DHW-only
+contract. It preserves a valid reported comfort preference (1/2/3) or uses
+Balanced=2 when absent/invalid, following the app's default. Both settings and
+properties are persisted before submission; successful status is verified
+against their readback. Missing comfort readback leaves success unverified.
+Off sends only mode 0, never a target-temperature or heating-control write.
+
 ## Implemented controls
 
 | Control | Read → write | Recovered app behavior / source |

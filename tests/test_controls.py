@@ -172,7 +172,7 @@ async def test_native_number_entities_and_actual_p60_modes() -> None:
     assert ControlMethodSensor(current).native_value == "Smart OpenTherm"
     data["dhwBoostEndTime"] = "2026-07-26T12:28:27Z"
     assert BoostEndSensor(current).native_value.isoformat() == "2026-07-26T12:28:27+00:00"
-    assert len(PLATFORMS) == 5
+    assert len(PLATFORMS) == 6
 
 
 def test_packaging_and_platform_imports() -> None:
