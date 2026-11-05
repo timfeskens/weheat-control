@@ -8,6 +8,36 @@ The function references below are **supplemental Hermes disassembly**, not
 runtime observations or REA JavaScript evidence. Saved analysis:
 `weheat-rea-BfINXk/functions/<id>.hasm` in the original analysis workspace.
 
+## API version correction and expired-boost recovery
+
+Supplemental function #21762 sets `appVersion` to `app_consumer_v4.0.1`;
+its production branch changes API/auth/portal URLs but not that value.
+#34499 passes it as the version-check configuration and #34516 sets `x-version`.
+The APK release `4.5.14` is not the API protocol header. Read-only live probes
+returned HTTP 505 with `4.5.14` and HTTP 200 with `app_consumer_v4.0.1` for both
+installation settings and the board request listing. This does not establish
+PATCH acceptance or individual-request status behavior; no mutation was probed.
+
+#21065 lists `/control-boards/{id}/settings` with `page=1`. The observed complete
+empty response is `metadata: {totalCount: 0, pageSize: 10, currentPage: 1,
+totalPages: 0}, data: []`. Backend retention/queue guarantees are unknown, so this
+cannot prove rejection or success of a historic ID-less submission. Recovery is
+an explicit local acknowledgement limited to a no-longer-active, expired absolute
+boost deadline; never an automatic terminal-status inference or command replay.
+
+## Intelligence scope
+
+Screen #32874 reads `hasDhwWeheatIntelligence`. Enable #32878 / #21587 sends
+`DhwScheduleEnabled: 3` plus `DhwComfortPreference` in `properties` (Balanced=2
+or selected comfort). Disable #32888 sends `DhwScheduleEnabled: 0`, selecting
+fixed setpoint rather than restoring a previous mode. It does not write heating
+`ControlMethod` or system control. #13192 separately maps
+`installationSystem.systemControl === 1` to whole-system Intelligence; the heating
+method enum #12741 separately defines SmartOpenTherm=4 and Intelligence=9.
+No whole-system setter was established in the saved disassembly. Do not expose
+a DHW switch under a whole-system name or assume changing `ControlMethod` is
+equivalent. Backend side effects and whole-system restoration remain unknown.
+
 ## Implemented controls
 
 | Control | Read → write | Recovered app behavior / source |

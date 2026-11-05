@@ -3,6 +3,7 @@
 import time
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -15,6 +16,19 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: WeheatConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     async_add_entities([BoostButton(entry.runtime_data, minutes) for minutes in (30, 60, 0)])
+    async_add_entities([AcknowledgeExpiredBoostButton(entry.runtime_data)])
+
+
+class AcknowledgeExpiredBoostButton(WeheatEntity, ButtonEntity):
+    _attr_name = "Acknowledge expired uncertain boost"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:check-decagram-outline"
+
+    def __init__(self, coordinator: WeheatCoordinator) -> None:
+        super().__init__(coordinator, "acknowledge_expired_boost")
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_acknowledge_expired_boost()
 
 
 class BoostButton(WeheatEntity, ButtonEntity):

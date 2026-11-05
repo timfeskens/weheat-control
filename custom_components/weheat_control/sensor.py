@@ -91,6 +91,7 @@ class RequestSensor(WeheatEntity, SensorEntity):
         "idle",
         "submitting",
         "submission_uncertain",
+        "expired_outcome_unknown",
         "pending",
         "executing",
         "succeeded_unverified",

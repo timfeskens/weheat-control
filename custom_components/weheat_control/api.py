@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import aiohttp
 
-from .const import API, CLIENT_ID, ISSUER, REDIRECT_URI
+from .const import API, API_VERSION, CLIENT_ID, ISSUER, REDIRECT_URI
 
 type Json = str | int | float | bool | None | list[Json] | dict[str, Json]
 type Settings = dict[str, str | int | float | bool | list[int | float]]
@@ -238,13 +238,13 @@ class WeheatApi:
                     {"grant_type": "refresh_token", "client_id": CLIENT_ID, "refresh_token": self.tokens.refresh_token}
                 )
             headers = {"Authorization": f"Bearer {self.tokens.access_token}"}
-        # Read-only live verification: settings also rejects 4.5.14, but works
-        # without it. Do not infer that mutation/version checks can be bypassed.
+        # The API protocol version is NOT the app's marketing/release version.
+        # App config #21762 supplies this value to #34499 / #34516.
         versionless_read = method == "GET" and (
             path == "/installations/fully-expanded" or re.fullmatch(r"/installations/[^/]+/settings", path)
         )
         if not versionless_read:
-            headers["x-version"] = "4.5.14"
+            headers["x-version"] = API_VERSION
         return await self._http(method, API + path, headers=headers, body=body)
 
     async def installations(self) -> list[Installation]:
@@ -308,3 +308,14 @@ class WeheatApi:
         if type(status) is not int or status not in range(12):
             raise WeheatError("Unrecognized settings request status")
         return status
+
+    async def request_queue_empty(self, board_id: str) -> bool:
+        """Require an explicitly empty, complete first page; never infer from absence."""
+        from urllib.parse import quote
+
+        data = object_value(await self.request("GET", f"/control-boards/{quote(board_id, safe='')}/settings?page=1"))
+        metadata = object_value(data.get("metadata"))
+        counts = (metadata.get("totalCount"), metadata.get("currentPage"), metadata.get("totalPages"))
+        if any(type(value) is not int for value in counts) or not isinstance(data.get("data"), list):
+            raise WeheatError("Unexpected settings request listing")
+        return counts == (0, 1, 0) and data["data"] == []

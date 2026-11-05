@@ -115,7 +115,7 @@ async def test_transport_patch_no_retry_and_version_headers(http_status, code) -
                 assert error.value.http_status == http_status
         assert calls == [
             ("GET", "/installations/fully-expanded", None),
-            ("PATCH", "/control-boards/board-1/settings", "4.5.14"),
+            ("PATCH", "/control-boards/board-1/settings", "app_consumer_v4.0.1"),
         ]
     finally:
         await runner.cleanup()

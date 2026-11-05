@@ -78,6 +78,7 @@ complete the reauthentication flow offered by Home Assistant.
 | Hot-water boost end | Reported boost end time |
 | Heating control method and curve | Current method and curve values |
 | Settings request status | Tracks command progress, failures, and readback verification |
+| Acknowledge expired uncertain boost | Explicit local recovery for an expired boost with no request ID; never resends it |
 
 Entities are enabled by default, but availability depends on the settings and
 capabilities returned by your installation. Heating-curve entities are added
@@ -97,6 +98,9 @@ when a supported control method is detected.
 The integration never changes operating modes to make another control available.
 Cooling controls, heating-mode changes, whole-system power switching, room
 thermostats, and installer/protection settings are not supported.
+The official app's inspected Intelligence toggle writes hot-water mode only.
+A whole-system Intelligence switch is not exposed: its write/restore contract
+has not been verified. Heating control method and DHW Intelligence are distinct.
 
 ## Command status and troubleshooting
 
@@ -112,10 +116,23 @@ state updates.
 | Discovery fails during setup | Retry the installation step; the setup flow retains the exchanged login. |
 | A command remains unresolved or has an uncertain outcome | Check the official app and **Settings request status**. Further commands are blocked, even after a restart, to prevent accidental repeats. Do not delete storage or retry blindly. Use the official app if an urgent change is needed. |
 | Status shows a mismatch | The reported settings differ from the request; this is not verified success. |
-| HTTP 505/version error | The cloud rejected the recovered app version. Current command/status route compatibility is not verified; the integration does not replay the command with a different version header. |
+| HTTP 505/version error | The cloud rejected the API protocol version. The integration uses the app's `app_consumer_v4.0.1` protocol header, not its `4.5.14` release number, and never retries commands automatically. |
 
 Request intent is saved before sending a command. A journal storage failure
 blocks submission. An unresolved request has no automatic reset or override.
+
+**Expired ID-less boost recovery:** after checking the official app, you may
+press **Acknowledge expired uncertain boost** in the device's diagnostic section.
+This is an explicit acknowledgement of an unknown outcome, not verified success
+or upstream cancellation. It is limited to a boost-only intent of at most one
+hour, with its deadline expired by at least ten minutes, no request ID, the
+same control board, a readback showing no active boost, and an explicitly empty
+cloud request listing. Missing data, cloud/storage failures, active or listed
+requests, and other settings remain blocked. The button sends no settings
+command. The original intent/outcome remains in the journal and is archived
+there when a later command is submitted; the status is
+`expired_outcome_unknown`. An empty listing cannot establish whether the original
+request was ever accepted. Do not use this as a general reset mechanism.
 
 `submission_uncertain` means a submission was attempted but its outcome could
 not be established, not that the sensor is missing data. Older unresolved
