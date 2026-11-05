@@ -60,6 +60,7 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
     async def _save_operation(self) -> None:
         try:
             await self._store.async_save(self.operation)
+            self.async_update_listeners()
         except OSError, ValueError:
             raise HomeAssistantError(
                 "Could not persist the settings journal. Device writes are blocked; inspect storage."
@@ -142,11 +143,24 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
                 try:
                     request_id = await self.api.patch(selected.board_id, settings)
                     self.operation.update(request_id=request_id, state="pending")
-                except Exception, asyncio.CancelledError:
-                    self.operation["state"] = "unknown"
+                except (Exception, asyncio.CancelledError) as error:
+                    # Only controlled metadata is retained, never exception text,
+                    # URLs, response bodies, credentials, or tracebacks.
+                    code = "cancelled" if isinstance(error, asyncio.CancelledError) else "unexpected_error"
+                    http_status = None
+                    if isinstance(error, WeheatError):
+                        code = error.code
+                        http_status = error.http_status
+                    self.operation.update(state="submission_uncertain", error_code=code, http_status=http_status)
+                    _LOGGER.warning(
+                        "Settings submission outcome uncertain (error_code=%s, http_status=%s); "
+                        "further writes blocked, no retry performed",
+                        code,
+                        http_status,
+                    )
                     await self._save_operation()
                     # The intent remains durable even if cancellation prevents cleanup.
-                    if asyncio.current_task() and asyncio.current_task().cancelling():
+                    if isinstance(error, asyncio.CancelledError):
                         raise
                     raise HomeAssistantError(
                         "Submission outcome is uncertain. Do not retry; check the official app and request state."

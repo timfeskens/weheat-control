@@ -117,6 +117,21 @@ state updates.
 Request intent is saved before sending a command. A journal storage failure
 blocks submission. An unresolved request has no automatic reset or override.
 
+`submission_uncertain` means a submission was attempted but its outcome could
+not be established, not that the sensor is missing data. Older unresolved
+`unknown` records are displayed this way too, without releasing the write block.
+New failures retain a safe `error_code` and, when available, `http_status` in
+the status sensor and diagnostics. Raw responses and exception text are never
+logged. Older requests cannot recover error details that were not recorded.
+
+### Device-page layout
+
+Home Assistant controls the device page's ordering and built-in sections; the
+integration cannot insert a custom quiet-schedule section there. For exact
+ordering, use a dashboard with the day and scheduled-night preset controls
+together and the 14 schedule times in a separate section. Existing entity IDs
+do not need to change.
+
 For help, [open an issue](https://github.com/timfeskens/weheat-control/issues)
 with your Home Assistant version, heat-pump model, operating mode, and sanitized
 error details. Integration diagnostics omit tokens and device identifiers.

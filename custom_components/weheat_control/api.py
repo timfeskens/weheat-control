@@ -25,6 +25,11 @@ type Settings = dict[str, str | int | float | bool | list[int | float]]
 class WeheatError(Exception):
     """Safe error message without credentials or upstream response bodies."""
 
+    def __init__(self, message: str, *, code: str = "weheat_error", http_status: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.http_status = http_status
+
 
 class AuthenticationError(WeheatError):
     """Login must be renewed."""
@@ -153,24 +158,44 @@ class WeheatApi:
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as response:
                 if response.status in (400, 401) and url.startswith(ISSUER):
-                    raise AuthenticationError("Weheat login expired or was rejected")
+                    raise AuthenticationError(
+                        "Weheat login expired or was rejected", code="authentication", http_status=response.status
+                    )
                 if response.status == 401:
-                    raise AuthenticationError("Weheat login was rejected; reauthenticate")
+                    raise AuthenticationError(
+                        "Weheat login was rejected; reauthenticate", code="authentication", http_status=401
+                    )
                 if response.status == 505:
-                    raise WeheatError("Weheat rejected the recovered app version (HTTP 505); no retry performed")
+                    raise WeheatError(
+                        "Weheat rejected the recovered app version (HTTP 505); no retry performed",
+                        code="app_version_rejected",
+                        http_status=505,
+                    )
                 if not 200 <= response.status < 300:
-                    raise WeheatError(f"Weheat returned HTTP {response.status}; no retry performed")
+                    raise WeheatError(
+                        f"Weheat returned HTTP {response.status}; no retry performed",
+                        code="http_error",
+                        http_status=response.status,
+                    )
                 # Bound response buffering; errors never include raw target content.
                 chunks: list[bytes] = []
                 size = 0
                 async for chunk in response.content.iter_chunked(65536):
                     size += len(chunk)
                     if size > 2_000_000:
-                        raise WeheatError("Weheat response exceeded the size limit")
+                        raise WeheatError("Weheat response exceeded the size limit", code="response_too_large")
                     chunks.append(chunk)
                 return json_value(json.loads(b"".join(chunks)))
-        except aiohttp.ClientError, TimeoutError, ValueError:
-            raise WeheatError("Weheat connection or response failed; no automatic retry performed") from None
+        except TimeoutError:
+            raise WeheatError("Weheat request timed out; no automatic retry performed", code="timeout") from None
+        except aiohttp.ClientError:
+            raise WeheatError(
+                "Weheat connection failed; no automatic retry performed", code="connection_error"
+            ) from None
+        except ValueError:
+            raise WeheatError(
+                "Weheat response was not valid JSON; no automatic retry performed", code="invalid_response"
+            ) from None
 
     async def exchange(self, code: str, verifier: str) -> Tokens:
         return await self._token(
@@ -253,16 +278,21 @@ class WeheatApi:
     async def patch(self, board_id: str, settings: Settings) -> str:
         from urllib.parse import quote
 
-        data = object_value(
-            await self.request(
-                "PATCH",
-                f"/control-boards/{quote(board_id, safe='')}/settings",
-                {"settings": dict(settings), "updateImmediately": False},
-            )
+        response = await self.request(
+            "PATCH",
+            f"/control-boards/{quote(board_id, safe='')}/settings",
+            {"settings": dict(settings), "updateImmediately": False},
         )
-        if "data" in data:
-            data = object_value(data["data"])
-        return identifier(data.get("settingsRequestId"))
+        try:
+            data = object_value(response)
+            if "data" in data:
+                data = object_value(data["data"])
+            return identifier(data.get("settingsRequestId"))
+        except WeheatError:
+            raise WeheatError(
+                "Weheat submission response did not contain a usable request ID",
+                code="missing_request_id",
+            ) from None
 
     async def status(self, board_id: str, request_id: str) -> int:
         from urllib.parse import quote

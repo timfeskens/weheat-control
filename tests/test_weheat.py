@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import hashlib
+import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ from custom_components.weheat_control.api import (
 from custom_components.weheat_control.config_flow import WeheatConfigFlow
 from custom_components.weheat_control.const import BOARD_ID, DOMAIN, INSTALLATION_ID, TOKENS
 from custom_components.weheat_control.coordinator import WeheatCoordinator, readback_matches
+from custom_components.weheat_control.sensor import RequestSensor
 
 
 def config_entry(legacy_options: bool = False) -> ConfigEntry:
@@ -81,14 +83,17 @@ def test_pkce_and_callback() -> None:
             callback_code(value, "x")
 
 
-async def test_transport_patch_no_retry_and_version_headers() -> None:
+@pytest.mark.parametrize(
+    ("http_status", "code"), [(503, "http_error"), (505, "app_version_rejected"), (401, "authentication")]
+)
+async def test_transport_patch_no_retry_and_version_headers(http_status, code) -> None:
     calls: list[tuple[str, str, str | None]] = []
 
     async def handler(request: web.Request) -> web.Response:
         calls.append((request.method, request.path, request.headers.get("x-version")))
         if request.method == "PATCH":
             assert await request.json() == {"settings": {"DhwBoostEndTime": "123"}, "updateImmediately": False}
-            return web.json_response({"sensitive": "never-echo"}, status=503)
+            return web.json_response({"sensitive": "never-echo"}, status=http_status)
         return web.json_response({"data": [{"id": "installation-1", "heatPump": {"controlBoardId": "board-1"}}]})
 
     app = web.Application()
@@ -103,9 +108,11 @@ async def test_transport_patch_no_retry_and_version_headers() -> None:
             api = WeheatApi(session, Tokens("fake", "fake-refresh", time.time() + 300))
             with patch("custom_components.weheat_control.api.API", f"http://127.0.0.1:{port}"):
                 assert await api.installations() == [Installation("installation-1", "board-1")]
-                with pytest.raises(WeheatError, match="503") as error:
+                with pytest.raises(WeheatError) as error:
                     await api.patch("board-1", {"DhwBoostEndTime": "123"})
                 assert "never-echo" not in str(error.value)
+                assert error.value.code == code
+                assert error.value.http_status == http_status
         assert calls == [
             ("GET", "/installations/fully-expanded", None),
             ("PATCH", "/control-boards/board-1/settings", "4.5.14"),
@@ -168,12 +175,86 @@ async def test_unknown_submission_blocks_writes_across_restart(hass, current_set
         ):
             with pytest.raises(HomeAssistantError, match="uncertain"):
                 await coordinator.async_write({"DhwBoostEndTime": str(int(time.time()) + 1800)})
-            assert coordinator.operation["state"] == "unknown"
+            assert coordinator.operation["state"] == "submission_uncertain"
             restarted = WeheatCoordinator(hass, entry, api)
             await restarted.async_load_operation()
             with pytest.raises(HomeAssistantError, match="unresolved"):
                 await restarted.async_write({"DhwBoostEndTime": str(int(time.time()) + 1800)})
             mutation.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "status"),
+    [
+        (WeheatError("private response", code="app_version_rejected", http_status=505), "app_version_rejected", 505),
+        (WeheatError("private response", code="timeout"), "timeout", None),
+        (RuntimeError("private response"), "unexpected_error", None),
+        (asyncio.CancelledError("private response"), "cancelled", None),
+    ],
+)
+async def test_submission_error_metadata_is_safe_durable_and_not_retried(
+    hass, current_settings, caplog, error, code, status
+) -> None:
+    async with ClientSession() as session:
+        api = WeheatApi(session)
+        coordinator = WeheatCoordinator(hass, config_entry(), api)
+        with (
+            patch.object(
+                api, "installations", new_callable=AsyncMock, return_value=[Installation("installation-1", "board-1")]
+            ),
+            patch.object(api, "patch", new_callable=AsyncMock, side_effect=error) as mutation,
+            patch.object(coordinator, "async_update_listeners") as notify,
+        ):
+            expected = asyncio.CancelledError if isinstance(error, asyncio.CancelledError) else HomeAssistantError
+            with pytest.raises(expected):
+                await coordinator.async_write({"DhwBoostEndTime": str(int(time.time()) + 1800)})
+            assert notify.call_count >= 2
+            restored = WeheatCoordinator(hass, coordinator.entry, api)
+            await restored.async_load_operation()
+            assert restored.operation["error_code"] == code
+            assert restored.operation["http_status"] == status
+            sensor = RequestSensor(restored)
+            assert sensor.native_value == "submission_uncertain"
+            assert sensor.extra_state_attributes["unresolved"] is True
+            assert sensor.extra_state_attributes["error_code"] == code
+            with pytest.raises(HomeAssistantError, match="unresolved"):
+                await restored.async_write({"DhwBoostEndTime": str(int(time.time()) + 1800)})
+            mutation.assert_awaited_once()
+        assert "private response" not in caplog.text
+        assert "private response" not in str(restored.operation)
+
+
+async def test_legacy_unknown_request_displays_uncertainty_without_unlocking(hass) -> None:
+    async with ClientSession() as session:
+        coordinator = WeheatCoordinator(hass, config_entry(), WeheatApi(session))
+        coordinator.operation = {"state": "unknown", "terminal": False}
+        sensor = RequestSensor(coordinator)
+        assert sensor.native_value == "submission_uncertain"
+        assert sensor.extra_state_attributes["unresolved"] is True
+        assert sensor.extra_state_attributes["error_code"] is None
+        assert coordinator.operation == {"state": "unknown", "terminal": False}
+
+
+def test_request_status_options_have_matching_translations() -> None:
+    root = Path(__file__).resolve().parents[1] / "custom_components" / DOMAIN
+    strings = json.loads((root / "strings.json").read_text())
+    translations = json.loads((root / "translations" / "en.json").read_text())
+    states = strings["entity"]["sensor"]["request_status"]["state"]
+    sensor = RequestSensor(Mock(operation={}, entry=config_entry()))
+    assert set(states) == set(sensor.options)
+    assert states == translations["entity"]["sensor"]["request_status"]["state"]
+
+
+@pytest.mark.parametrize("response", [{}, {"data": {}}, {"data": []}, "sensitive-response"])
+async def test_unrecognized_submission_response_preserves_uncertainty(response) -> None:
+    async with ClientSession() as session:
+        api = WeheatApi(session)
+        with patch.object(api, "request", new_callable=AsyncMock, return_value=response) as request:
+            with pytest.raises(WeheatError) as error:
+                await api.patch("board-1", {"DhwBoostEndTime": "123"})
+            assert error.value.code == "missing_request_id"
+            assert "sensitive-response" not in str(error.value)
+            request.assert_awaited_once()
 
 
 async def test_request_id_polling_and_mismatch_preserved(hass, current_settings) -> None:

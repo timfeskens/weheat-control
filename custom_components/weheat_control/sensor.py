@@ -85,6 +85,27 @@ class CurveSensor(WeheatEntity, SensorEntity):
 class RequestSensor(WeheatEntity, SensorEntity):
     _attr_name = "Settings request status"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_translation_key = "request_status"
+    _attr_options = [
+        "idle",
+        "submitting",
+        "submission_uncertain",
+        "pending",
+        "executing",
+        "succeeded_unverified",
+        "succeeded",
+        "cancelled",
+        "cancelled_before_submission",
+        "failed",
+        "mismatch",
+        "failed_device_wrong_state",
+        "failed_wrong_execution_order",
+        "failed_device_disconnected",
+        "failed_settings_request_mismatch",
+        "failed_settings_key_not_found",
+        "failed_another_request_executing",
+    ]
 
     def __init__(self, coordinator: WeheatCoordinator) -> None:
         super().__init__(coordinator, "request_status")
@@ -96,7 +117,9 @@ class RequestSensor(WeheatEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        return str(self.coordinator.operation.get("state", "idle"))
+        state = str(self.coordinator.operation.get("state", "idle"))
+        # Older journals used HA's reserved unknown state for an actual outcome.
+        return "submission_uncertain" if state == "unknown" else state
 
     @property
     def extra_state_attributes(self) -> dict[str, str | int | bool | None]:
@@ -108,6 +131,8 @@ class RequestSensor(WeheatEntity, SensorEntity):
             "readback_matches": operation.get("readback_matches")
             if type(operation.get("readback_matches")) is bool
             else None,
+            "error_code": operation.get("error_code") if isinstance(operation.get("error_code"), str) else None,
+            "http_status": operation.get("http_status") if type(operation.get("http_status")) is int else None,
         }
 
 

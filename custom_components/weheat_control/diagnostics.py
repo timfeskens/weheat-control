@@ -14,4 +14,6 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: WeheatC
         "operation_terminal": coordinator.operation.get("terminal"),
         "upstream_status": coordinator.operation.get("status"),
         "readback_matches": coordinator.operation.get("readback_matches"),
+        "error_code": coordinator.operation.get("error_code"),
+        "http_status": coordinator.operation.get("http_status"),
     }

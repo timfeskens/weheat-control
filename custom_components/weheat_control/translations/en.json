@@ -1,5 +1,30 @@
 {
   "title": "Weheat Control",
+  "entity": {
+    "sensor": {
+      "request_status": {
+        "state": {
+          "idle": "Idle",
+          "submitting": "Submitting",
+          "submission_uncertain": "Submission uncertain",
+          "pending": "Pending",
+          "executing": "Executing",
+          "succeeded_unverified": "Succeeded, awaiting verification",
+          "succeeded": "Succeeded and verified",
+          "cancelled": "Cancelled",
+          "cancelled_before_submission": "Cancelled before submission",
+          "failed": "Failed",
+          "mismatch": "Settings mismatch",
+          "failed_device_wrong_state": "Failed: device in wrong state",
+          "failed_wrong_execution_order": "Failed: wrong execution order",
+          "failed_device_disconnected": "Failed: device disconnected",
+          "failed_settings_request_mismatch": "Failed: request mismatch",
+          "failed_settings_key_not_found": "Failed: settings key not found",
+          "failed_another_request_executing": "Failed: another request executing"
+        }
+      }
+    }
+  },
   "config": {
     "step": {
       "login": {
