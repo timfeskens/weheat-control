@@ -183,7 +183,7 @@ def test_packaging_and_platform_imports() -> None:
     assert manifest["config_flow"] is True
     assert manifest["iot_class"] == "cloud_polling"
     assert "options" not in json.loads((component / "strings.json").read_text())
-    assert json.loads((root / "hacs.json").read_text())["homeassistant"] == "2026.11.0"
+    assert json.loads((root / "hacs.json").read_text())["homeassistant"] == "2026.10.0"
     assert json.loads((component / "strings.json").read_text()) == json.loads(
         (component / "translations" / "en.json").read_text()
     )

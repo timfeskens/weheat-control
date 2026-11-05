@@ -14,7 +14,7 @@ and supported temperature settings directly from Home Assistant.
 
 ## Requirements
 
-- **Home Assistant 2026.11 or newer**.
+- **Home Assistant 2026.10 or newer**.
 - A Weheat account with access to an installation and its heat-pump control board.
 - Internet access to the Weheat cloud. This is not a local/LAN integration.
 - HACS, if using the recommended installation method.
@@ -143,5 +143,8 @@ python3 -m venv .venv
 ```
 
 Tests use Home Assistant libraries with mocked cloud responses and do not send
-real device commands. API contracts, recovered app mappings, and known
+real device commands. CI tests Home Assistant **2026.10.0** and **2026.11.0**;
+the development dependencies use the minimum supported version. These offline
+checks do not replace testing setup and controls in a running instance.
+API contracts, recovered app mappings, and known
 limitations are documented in [control evidence](docs/control-evidence.md).
