@@ -15,7 +15,7 @@ from .entity import WeheatEntity
 async def async_setup_entry(
     hass: HomeAssistant, entry: WeheatConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    async_add_entities([BoostButton(entry.runtime_data, minutes) for minutes in (30, 60, 0)])
+    async_add_entities([BoostButton(entry.runtime_data, minutes) for minutes in (30, 60, 90, 120, 0)])
     async_add_entities([AcknowledgeExpiredBoostButton(entry.runtime_data)])
 
 

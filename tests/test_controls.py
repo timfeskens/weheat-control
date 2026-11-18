@@ -221,3 +221,23 @@ async def test_curve_entities_appear_when_official_app_changes_to_supported_meth
     assert len(add.call_args_list[1].args[0]) == 5
     listener()
     assert len(add.call_args_list) == 2  # no duplicate entities
+
+
+@pytest.mark.parametrize("minutes", [30, 60, 90, 120])
+async def test_boost_buttons_match_the_app_durations(minutes) -> None:
+    from time import time as now
+
+    from custom_components.weheat_control.button import BoostButton
+    from custom_components.weheat_control.button import async_setup_entry as setup_buttons
+
+    current = coordinator(settings())
+    entry = Mock(runtime_data=current)
+    add = Mock()
+    await setup_buttons(Mock(), entry, add)
+    names = [entity.name for entity in add.call_args_list[0].args[0]]
+    assert f"Hot-water boost {minutes} minutes" in names
+    button = BoostButton(current, minutes)
+    await button.async_press()
+    end = int(current.async_write.await_args.args[0]["DhwBoostEndTime"])
+    assert abs(end - int(now()) - minutes * 60) <= 1
+    validate_write({"DhwBoostEndTime": str(end)}, settings())

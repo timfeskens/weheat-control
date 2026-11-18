@@ -87,7 +87,7 @@ complete the reauthentication flow offered by Home Assistant.
 
 | Entity | Description |
 | --- | --- |
-| Hot-water boost buttons | Request 30 or 60 minutes of boost, or stop boost |
+| Hot-water boost buttons | Request 30, 60, 90 or 120 minutes of boost, or stop boost |
 | Day quiet preset | Normal, Background chatter, Light rain, Library, Whisper |
 | Scheduled-night quiet preset | Separate night presets, including **Schedule disabled** and **Off during scheduled hours** |
 | Quiet schedule times | Start and stop for each weekday: 14 entities using device-local time |
@@ -161,8 +161,8 @@ blocks submission. An unresolved request has no automatic reset or override.
 **Expired ID-less boost recovery:** after checking the official app, you may
 press **Acknowledge expired uncertain boost** in the device's diagnostic section.
 This is an explicit acknowledgement of an unknown outcome, not verified success
-or upstream cancellation. It is limited to a boost-only intent of at most one
-hour, with its deadline expired by at least ten minutes, no request ID, the
+or upstream cancellation. It is limited to a boost-only intent of at most two
+hours, with its deadline expired by at least ten minutes, no request ID, the
 same control board, a readback showing no active boost, and an explicitly empty
 cloud request listing. Missing data, cloud/storage failures, active or listed
 requests, and other settings remain blocked. The button sends no settings

@@ -1,7 +1,7 @@
 """Explicit expired-boost acknowledgement never replays a mutation."""
 
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from aiohttp import ClientSession
@@ -166,3 +166,15 @@ async def test_request_queue_requires_explicit_complete_empty_listing(response, 
                     await api.request_queue_empty("board-1")
             else:
                 assert await api.request_queue_empty("board-1") is expected
+
+
+@pytest.mark.parametrize("minutes,allowed", [(120, True), (121, False)])
+def test_expired_boost_recovery_covers_the_longest_app_boost(hass, minutes, allowed):
+    coordinator = WeheatCoordinator(hass, config_entry(), WeheatApi(Mock()))
+    created = int(time.time()) - minutes * 60 - 1200
+    coordinator.operation = {
+        **expired_operation(),
+        "created_at": created,
+        "settings": {"DhwBoostEndTime": str(created + minutes * 60)},
+    }
+    assert coordinator._expired_boost_intent() is allowed

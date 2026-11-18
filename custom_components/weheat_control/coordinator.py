@@ -101,7 +101,7 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
         return (
             type(created) is int
             and end is not None
-            and 0 < created <= end <= created + 3600
+            and 0 < created <= end <= created + 7200
             and end + 600 <= time.time()
         )
 
