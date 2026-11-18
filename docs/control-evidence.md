@@ -38,8 +38,9 @@ No whole-system setter was established in the saved disassembly. Do not expose
 a DHW switch under a whole-system name or assume changing `ControlMethod` is
 equivalent. Backend side effects and whole-system restoration remain unknown.
 
-The native **Hot-water Weheat Intelligence** switch implements this DHW-only
-contract. It preserves a valid reported comfort preference (1/2/3) or uses
+The **Hot-water mode** select implements this DHW-only contract (it replaced
+the earlier Intelligence switch, which duplicated it). It preserves a valid
+reported comfort code (1–3, 5, 6) or uses
 Balanced=2 when absent/invalid, following the app's default. Both settings and
 properties are persisted before submission; successful status is verified
 against their readback. Missing comfort readback leaves success unverified.
@@ -77,6 +78,49 @@ Property-only intent is persisted before submission and requires exact integer
 readback to become verified success. Static evidence does not establish current
 backend acceptance or a particular installation's property support.
 
+### Manual DHW schedule (user-confirmed, not app-traced)
+
+Live readback contains `dhwScheduleEnabled` (2 = manual schedule),
+`dhwScheduleSafetyTemperature` and `dhwSchedule{Weekday}Target` arrays of 96
+integers. The installation owner confirmed the encoding against the app: one
+slot per quarter hour from 00:00, value = target °C × 2 (100 = 50 °C,
+110 = 55 °C), 0 = no target. This is **not** recovered from the saved
+disassembly. Writes always contain all seven `DhwSchedule{Weekday}Target` arrays (96 slots
+each), with untouched weekdays re-sent from fresh readback; a partial readback
+blocks the write. Selecting the manual schedule sends `DhwScheduleEnabled: 2`
+plus the complete current week, without properties. Key names follow the
+established capitalised-key convention; backend acceptance is unverified until
+a real request has been submitted and read back. The 40–60 °C write range
+reuses the fixed-target app range; the app's own schedule bounds are unknown, so
+readback values up to 80 °C are displayed, and may be re-sent unchanged, but
+cannot be newly written. Enabling requires all seven arrays and at least one
+period. The schedule action never writes the safety temperature; only the
+Intelligence comfort select does.
+
+The **Hot-water mode** select mirrors the app's three choices (0 fixed,
+2 manual schedule, 3 Intelligence). Its Intelligence option uses the traced
+#32878/#21587 payload (mode 3 plus `DhwComfortPreference`) and its fixed option
+the traced #32888 payload (mode 0 only). The separate Intelligence switch was
+removed as a duplicate of these two options.
+
+### DHW Intelligence comfort in the current app (observed)
+
+The current consumer app offers only **Normaal** and **Zuinig** for hot-water
+Intelligence. Comparing two complete settings readbacks after switching between
+them in the app, the only settings difference was `dhwScheduleSafetyTemperature`:
+Normaal = 40, Zuinig = 10. The settings readback has no `dhwComfortPreference`;
+the app keeps it in `/installations/fully-expanded` as
+`installationSystem.dhwComfortPreference`: Normaal = 6, Zuinig = 5 (outside the
+old 0–3 enum). A live HA write of only `DhwScheduleSafetyTemperature: 40` was
+accepted and read back as 40, but the code stayed 5 and the app kept showing
+Zuinig. The select (same unique ID) therefore sends
+`settings: {DhwScheduleSafetyTemperature}` plus
+`properties: {DhwComfortPreference}` together, only in Intelligence mode, and
+verifies both: the coordinator overlays the overview's code onto the settings
+readback, fetching the overview only in Intelligence mode. That the property
+updates the overview code is inferred from the earlier traced property contract,
+not yet observed. Enabling Intelligence preserves a reported code (1–3, 5, 6).
+
 ### Cooling: traced but deliberately not exposed
 
 #12765 defines CoolingEnabled Unset=0, Off=1, Enabled=2; #12763 defines
@@ -89,16 +133,37 @@ enabling on explicit system suitability and condensation-risk acceptance;
 #32278 likewise requires risk consent for cooling-curve edits. No unguarded
 switch, installer/protection override or guessed restore behavior is added.
 
+## Intelligence hot-water plan (read-only)
+
+APK 4.5.14 (same SHA-256 as above), Hermes bytecode decompiled with
+`hermes-dec`: `getDhwSchedules({installationId, from, to})` issues
+`GET /installations/{installationId}/dhw-schedules` with `from`/`to` as UTC ISO
+timestamps; the Insights screen queries per local day (`useBatchedRangeQuery`,
+key `dhw-schedules`). `parsePlanWindows` iterates `cycles`, skips cycles without
+`startAt`, splits on `isLegionella`, and draws each window as `startAt` plus
+`averageCycleHoldTimeMinutes` (legionella or fallback: `holdTimeMinutes`).
+A live read (2026-11-18) returned one item per planned day with
+`scheduleStartAt`, `targetTemperatureC` (52.9), `holdTimeMinutes` and
+`averageCycleHoldTimeMinutes` (120), `cycles` (one with `startAt: null`), cost
+fields (null) and 96-slot `costCoefficients`/`baselineDhwProbabilities`. No item
+was returned yet for the next day at midday. The app separately colours executed,
+unplanned and boost moments from heat-pump logs; the integration only exposes the
+plan and leaves actual state to the official integration. `targetTemperatureC`
+is exposed as an attribute only: the owner observed actual targets of about
+49–50 °C, so its meaning is not established.
+
 ## Implemented controls
 
 | Control | Read → write | Recovered app behavior / source |
 | --- | --- | --- |
 | DHW boost | `dhwBoostEndTime` → `DhwBoostEndTime` | String Unix seconds for writes; #21094 (on), #21049 (off). ISO timestamp observed in live read. Buttons request 30/60 minutes or stop. |
 | DHW target | `dhwTargetTemperature` → `DhwTargetTemperature` | 40–60 °C, integer steps. Available only with DHW present and mode `dhwScheduleEnabled=0` (fixed). Never switch out of Intelligence/schedule automatically. |
-| DHW Intelligence comfort | `dhwComfortPreference` → `properties.DhwComfortPreference` | Safe=1, Balanced=2, Eco=3; #13345, #31144, #31151. Property-only write; requires valid current readback and Intelligence mode. |
+| DHW Intelligence comfort | `dhwScheduleSafetyTemperature` + overview `installationSystem.dhwComfortPreference` → `DhwScheduleSafetyTemperature` + `properties.DhwComfortPreference` | Normal=40/6, Eco=10/5, observed in the current app. Both halves in one request and both verified. Requires Intelligence mode. |
 | Day quiet | `performanceModePreset` → `PerformanceModePreset` | #32805:23–43, #32837:22–59, #32827:20–28. Values 0 Normal, 1 Background chatter, 2 Light rain, 3 Library, 4 Whisper. |
 | Scheduled night quiet | `silentHoursScheduledPreset` → `SilentHoursScheduledPreset` | #32807:23–55, #32854:23–81, #32819:5–21, #32820:142–147. Values 0 schedule disabled, 1 Normal, 2 Background chatter, 3 Light rain, 4 Library, 5 off during scheduled hours, 6 Whisper, 7 Minimum. Value 7 is model-restricted and not exposed without verified model identity. |
 | Quiet schedule | `silentHours/Minutes{Weekday}{Start/Stop}` → same names capitalized | Require all 28 current fields. Edit one hour/minute pair, preserving other weekdays. Device-local time semantics; no inferred timezone conversion. Entities enabled by default. |
+| DHW manual schedule | `dhwSchedule{Weekday}Target` → `DhwSchedule{Weekday}Target`; mode `DhwScheduleEnabled: 2` | 96 quarter-hour slots, °C × 2, 0 = none. User-confirmed encoding; write contract unverified. Always the complete week. |
+| DHW mode | `dhwScheduleEnabled` → `DhwScheduleEnabled` | Select: 0 fixed, 2 manual schedule (+ full week), 3 Intelligence (+ comfort property). |
 | Heating curve | `heatingCurveX/Y`, `controlMethod` → full `HeatingCurveY` plus unchanged `ControlMethod` | #32192:5–15, #32190:179–214. Water values 18–60 °C. Only methods 1/2; preserve full point order/array. Eligible number entities enabled by default. Re-read before modifying. |
 
 Bounds are app UI limits, not verified backend or manufacturer safety limits.

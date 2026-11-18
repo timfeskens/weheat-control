@@ -62,6 +62,7 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
         self.operation: dict[str, Json] = {}
         self._store = OperationJournal(hass, entry.entry_id)
         self._write_lock = asyncio.Lock()
+        self.plan: DataUpdateCoordinator | None = None  # set by setup: WeheatPlanCoordinator
 
     async def async_load_operation(self) -> None:
         saved = await self._store.async_load()
@@ -164,12 +165,28 @@ class WeheatCoordinator(DataUpdateCoordinator[Settings]):
         self.operation.update(status=status, state=states.get(status, "failed"), terminal=status >= 2)
         await self._save_operation()
 
+    async def _add_comfort_preference(self, settings: Settings) -> None:
+        """The app keeps the Intelligence comfort choice in the installation overview, not in settings."""
+        # Only relevant (and only fetched) in hot-water Intelligence mode.
+        if "dhwComfortPreference" in settings or settings.get("dhwScheduleEnabled") != 3:
+            return
+        try:
+            installations = await self.api.installations()
+        except AuthenticationError:
+            raise
+        except WeheatError:
+            return  # Optional readback: the comfort select then falls back to the safety temperature.
+        selected = next((item for item in installations if item.id == self.entry.data[INSTALLATION_ID]), None)
+        if selected and selected.dhw_comfort_preference is not None:
+            settings["dhwComfortPreference"] = selected.dhw_comfort_preference
+
     async def _async_update_data(self) -> Settings:
         try:
             # Polling must not race an operation record being submitted/saved.
             async with self._write_lock:
                 await self._check_operation()
                 settings = await self.api.settings(str(self.entry.data[INSTALLATION_ID]))
+                await self._add_comfort_preference(settings)
                 if self.operation.get("state") in ("succeeded_unverified", "mismatch"):
                     requested = self.operation.get("settings")
                     properties = self.operation.get("properties")

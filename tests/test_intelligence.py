@@ -1,4 +1,4 @@
-"""DHW-only Intelligence payload, readback, persistence and gate coverage."""
+"""DHW-only Intelligence payload via the hot-water mode select: readback, persistence and gates."""
 
 import time
 from unittest.mock import AsyncMock, patch
@@ -17,28 +17,35 @@ from custom_components.weheat_control.controls import (
     validate_write,
 )
 from custom_components.weheat_control.coordinator import WeheatCoordinator
-from custom_components.weheat_control.switch import DhwIntelligenceSwitch
+from custom_components.weheat_control.select import DhwMode
 
 pytest_plugins = ["test_weheat"]
 
 
 @pytest.mark.parametrize("mode", [0, 2, 3])
-async def test_switch_uses_confirmed_dhw_state_and_exact_commands(mode):
+async def test_mode_select_sends_exact_intelligence_and_fixed_commands(mode):
     data = {**settings(), "dhwScheduleEnabled": mode, "controlMethod": 4}
     current = coordinator(data)
-    entity = DhwIntelligenceSwitch(current)
+    entity = DhwMode(current)
     assert entity.available
-    assert entity.is_on is (mode == 3)
+    assert (entity.current_option == "Weheat Intelligence") is (mode == 3)
     assert entity.entity_registry_enabled_default
-    await entity.async_turn_on()
-    current.async_write.assert_awaited_with({"DhwScheduleEnabled": 3}, properties=dhw_intelligence_properties)
-    assert entity.is_on is (mode == 3)  # no optimistic updates
-    await entity.async_turn_off()
-    current.async_write.assert_awaited_with({"DhwScheduleEnabled": 0})
+    await entity.async_select_option("Weheat Intelligence")
+    if mode == 3:
+        current.async_write.assert_not_awaited()  # already active: nothing sent
+    else:
+        current.async_write.assert_awaited_with({"DhwScheduleEnabled": 3}, properties=dhw_intelligence_properties)
+    assert (entity.current_option == "Weheat Intelligence") is (mode == 3)  # no optimistic updates
+    current.async_write.reset_mock()
+    await entity.async_select_option("Fixed temperature")
+    if mode == 0:
+        current.async_write.assert_not_awaited()
+    else:
+        current.async_write.assert_awaited_with({"DhwScheduleEnabled": 0})
     assert data["dhwTargetTemperature"] == 55
-    assert data["controlMethod"] == 4
+    assert data["controlMethod"] == 4  # never a space-heating change
     data["dhwScheduleEnabled"] = 0
-    assert entity.is_on is False
+    assert entity.current_option == "Fixed temperature"
     assert dhw_target_available(data)
 
 
@@ -55,10 +62,10 @@ async def test_switch_uses_confirmed_dhw_state_and_exact_commands(mode):
 )
 def test_unknown_capability_or_mode_is_unavailable(change):
     current = coordinator({**settings(), **change})
-    entity = DhwIntelligenceSwitch(current)
+    entity = DhwMode(current)
     assert not dhw_intelligence_available(current.data)
     assert not entity.available
-    assert entity.is_on is None
+    assert entity.current_option is None
     for mode, properties in ((0, None), (3, {"DhwComfortPreference": 2})):
         with pytest.raises(WeheatError):
             validate_write({"DhwScheduleEnabled": mode}, current.data, properties)
@@ -121,7 +128,7 @@ async def test_intelligence_properties_are_fresh_durable_and_readback_verified(h
             patch.object(api, "patch", new_callable=AsyncMock, return_value="request-1") as submit,
             patch.object(current, "async_request_refresh", new_callable=AsyncMock),
         ):
-            await DhwIntelligenceSwitch(current).async_turn_on()
+            await DhwMode(current).async_select_option("Weheat Intelligence")
             submit.assert_awaited_once_with("board-1", {"DhwScheduleEnabled": 3}, {"DhwComfortPreference": 3})
         restored = WeheatCoordinator(hass, current.entry, api)
         await restored.async_load_operation()
@@ -149,7 +156,10 @@ async def test_intelligence_uses_existing_uncertain_request_gate(hass):
         current = WeheatCoordinator(hass, config_entry(), api)
         current.operation = {"state": "submission_uncertain", "terminal": False}
         with patch.object(api, "patch", new_callable=AsyncMock) as submit:
-            for action in (DhwIntelligenceSwitch(current).async_turn_on, DhwIntelligenceSwitch(current).async_turn_off):
+            for action in (
+                lambda: DhwMode(current).async_select_option("Weheat Intelligence"),
+                lambda: DhwMode(current).async_select_option("Fixed temperature"),
+            ):
                 with pytest.raises(HomeAssistantError, match="unresolved"):
                     await action()
             submit.assert_not_awaited()
@@ -169,14 +179,14 @@ async def test_failed_enable_keeps_properties_and_blocks_replay_after_restart(ha
             ) as submit,
         ):
             with pytest.raises(HomeAssistantError, match="uncertain"):
-                await DhwIntelligenceSwitch(current).async_turn_on()
+                await DhwMode(current).async_select_option("Weheat Intelligence")
             restored = WeheatCoordinator(hass, current.entry, api)
             await restored.async_load_operation()
             assert restored.operation["properties"] == {"DhwComfortPreference": 2}
             assert restored.operation["settings"] == {"DhwScheduleEnabled": 3}
             assert restored.operation["terminal"] is False
             with pytest.raises(HomeAssistantError, match="unresolved"):
-                await DhwIntelligenceSwitch(restored).async_turn_on()
+                await DhwMode(restored).async_select_option("Weheat Intelligence")
             submit.assert_awaited_once()
 
 
@@ -192,7 +202,7 @@ async def test_disable_submits_only_fixed_mode_without_properties_or_target(hass
             patch.object(api, "patch", new_callable=AsyncMock, return_value="request-1") as submit,
             patch.object(current, "async_request_refresh", new_callable=AsyncMock),
         ):
-            await DhwIntelligenceSwitch(current).async_turn_off()
+            await DhwMode(current).async_select_option("Fixed temperature")
             submit.assert_awaited_once_with("board-1", {"DhwScheduleEnabled": 0})
             assert "properties" not in current.operation
             assert current.operation["settings"] == {"DhwScheduleEnabled": 0}
