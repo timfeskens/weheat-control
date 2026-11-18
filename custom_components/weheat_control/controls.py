@@ -33,7 +33,12 @@ CONTROL_METHODS = {
     9: "Weheat Intelligence",
 }
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-DHW_COMFORT_PREFERENCES = {"Safe": 1, "Balanced": 2, "Eco": 3}
+# Current app (Intelligence "Normaal"/"Zuinig"), observed by toggling the app: it changes the
+# hot-water safety temperature in settings and installationSystem.dhwComfortPreference.
+DHW_COMFORT_LEVELS = {"Normal": 40, "Eco": 10}
+DHW_COMFORT_CODES = {"Normal": 6, "Eco": 5}
+# Old app codes (Safe, Balanced, Eco) remain valid to preserve when enabling Intelligence.
+_KNOWN_COMFORT_CODES = (1, 2, 3, *DHW_COMFORT_CODES.values())
 
 
 def integer(value: object, minimum: int, maximum: int) -> bool:
@@ -63,17 +68,28 @@ def dhw_intelligence_available(current: Settings) -> bool:
 def dhw_intelligence_properties(current: Settings) -> Settings:
     """Preserve a known comfort preference; otherwise use the app's Balanced default."""
     preference = current.get("dhwComfortPreference")
-    return {"DhwComfortPreference": preference if type(preference) is int and preference in (1, 2, 3) else 2}
+    return {"DhwComfortPreference": preference if type(preference) is int and preference in _KNOWN_COMFORT_CODES else 2}
 
 
 def dhw_comfort_available(current: Settings) -> bool:
-    """Never invent a preference or enable Intelligence to expose this control."""
+    """Intelligence mode with a reported safety temperature; never enable Intelligence for this."""
     return (
         dhw_intelligence_available(current)
         and current.get("dhwScheduleEnabled") == 3
-        and type(current.get("dhwComfortPreference")) is int
-        and current.get("dhwComfortPreference") in DHW_COMFORT_PREFERENCES.values()
+        and type(current.get("dhwScheduleSafetyTemperature")) is int
     )
+
+
+def dhw_comfort_option(current: Settings) -> str | None:
+    """The app shows the overview's comfort code; fall back to the safety temperature without it."""
+    if not dhw_comfort_available(current):
+        return None
+    code = current.get("dhwComfortPreference")
+    if code is not None:
+        # An unknown code is shown as unknown, never mapped by temperature.
+        return next((name for name, value in DHW_COMFORT_CODES.items() if type(code) is int and value == code), None)
+    level = current["dhwScheduleSafetyTemperature"]
+    return next((name for name, value in DHW_COMFORT_LEVELS.items() if value == level), None)
 
 
 def schedule_available(current: Settings) -> bool:
@@ -114,15 +130,15 @@ def curve_point(current: Settings, index: int, value: float) -> Settings:
 
 def validate_write(settings: Settings, current: Settings, properties: Settings | None = None) -> None:
     """Validate against freshly read state immediately before submission."""
-    if not settings and properties and set(properties) == {"DhwComfortPreference"}:
-        preference = properties["DhwComfortPreference"]
-        if (
-            dhw_comfort_available(current)
-            and type(preference) is int
-            and preference in DHW_COMFORT_PREFERENCES.values()
+    if set(settings) == {"DhwScheduleSafetyTemperature"}:
+        # Both halves of the app's choice: safety temperature plus the matching comfort code.
+        level = settings["DhwScheduleSafetyTemperature"]
+        if dhw_comfort_available(current) and any(
+            type(level) is int and level == DHW_COMFORT_LEVELS[name] and properties == {"DhwComfortPreference": code}
+            for name, code in DHW_COMFORT_CODES.items()
         ):
             return
-        raise WeheatError("Hot-water Intelligence comfort preference is unavailable or invalid")
+        raise WeheatError("Hot-water Intelligence comfort setting is unavailable or invalid")
     if set(settings) == {"DhwScheduleEnabled"}:
         mode = settings["DhwScheduleEnabled"]
         if dhw_intelligence_available(current) and type(mode) is int:

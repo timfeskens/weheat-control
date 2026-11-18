@@ -6,7 +6,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import WeheatConfigEntry
-from .controls import DAY_PRESETS, DHW_COMFORT_PREFERENCES, NIGHT_PRESETS, dhw_comfort_available
+from .controls import (
+    DAY_PRESETS,
+    DHW_COMFORT_CODES,
+    DHW_COMFORT_LEVELS,
+    NIGHT_PRESETS,
+    dhw_comfort_available,
+    dhw_comfort_option,
+)
 from .coordinator import WeheatCoordinator
 from .entity import WeheatEntity
 
@@ -59,11 +66,14 @@ class QuietPreset(WeheatEntity, SelectEntity):
 
 
 class DhwComfortPreference(WeheatEntity, SelectEntity):
-    _attr_name = "Hot-water Intelligence comfort preference"
+    """The app's Intelligence choice Normaal/Zuinig: safety temperature plus comfort code."""
+
+    _attr_name = "Hot-water Intelligence comfort"
     _attr_icon = "mdi:water-boiler-auto"
-    _attr_options = list(DHW_COMFORT_PREFERENCES)
+    _attr_options = list(DHW_COMFORT_LEVELS)
 
     def __init__(self, coordinator: WeheatCoordinator) -> None:
+        # Same unique ID as the former comfort-preference select, so the entity is kept.
         super().__init__(coordinator, "dhw_comfort_preference")
 
     @property
@@ -72,12 +82,19 @@ class DhwComfortPreference(WeheatEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        if not dhw_comfort_available(self.coordinator.data):
-            return None
-        value = self.coordinator.data["dhwComfortPreference"]
-        return next((name for name, code in DHW_COMFORT_PREFERENCES.items() if code == value), None)
+        return dhw_comfort_option(self.coordinator.data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        return {
+            "safety_temperature": self.coordinator.data.get("dhwScheduleSafetyTemperature"),
+            "comfort_code": self.coordinator.data.get("dhwComfortPreference"),
+        }
 
     async def async_select_option(self, option: str) -> None:
-        if option not in DHW_COMFORT_PREFERENCES:
-            raise HomeAssistantError("Unknown hot-water Intelligence comfort preference")
-        await self.coordinator.async_write({}, properties={"DhwComfortPreference": DHW_COMFORT_PREFERENCES[option]})
+        if option not in DHW_COMFORT_LEVELS:
+            raise HomeAssistantError("Unknown hot-water Intelligence comfort setting")
+        await self.coordinator.async_write(
+            {"DhwScheduleSafetyTemperature": DHW_COMFORT_LEVELS[option]},
+            properties={"DhwComfortPreference": DHW_COMFORT_CODES[option]},
+        )
