@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import WeheatConfigEntry
-from .controls import CONTROL_METHODS
+from .controls import CONTROL_METHODS, DAYS, dhw_schedule_available, dhw_schedule_periods, dhw_schedule_read_key
 from .coordinator import WeheatCoordinator
 from .entity import WeheatEntity
 
@@ -23,8 +23,47 @@ async def async_setup_entry(
             ControlMethodSensor(entry.runtime_data),
             CurveSensor(entry.runtime_data),
             DhwTargetSensor(entry.runtime_data),
+            *(DhwScheduleSensor(entry.runtime_data, day) for day in DAYS),
         ]
     )
+
+
+class DhwScheduleSensor(WeheatEntity, SensorEntity):
+    """Readable summary of one weekday of the manual hot-water schedule."""
+
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, coordinator: WeheatCoordinator, day: str) -> None:
+        super().__init__(coordinator, f"dhw_schedule_{day.lower()}")
+        self._day = day
+        self._attr_name = f"Hot-water schedule {day}"
+
+    def _periods(self) -> list[dict[str, str | float]] | None:
+        if not dhw_schedule_available(self.coordinator.data):
+            return None
+        return dhw_schedule_periods(self.coordinator.data[dhw_schedule_read_key(self._day)])  # type: ignore[arg-type]
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._periods() is not None
+
+    @property
+    def native_value(self) -> str | None:
+        periods = self._periods()
+        if periods is None:
+            return None
+        if not periods:
+            return "No periods"
+        summary = ", ".join(f"{p['start']}–{p['end']} {p['temperature']:g} °C" for p in periods)
+        return summary if len(summary) <= 255 else f"{len(periods)} periods"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        return {
+            "periods": self._periods() or [],
+            "schedule_active": self.coordinator.data.get("dhwScheduleEnabled") == 2,
+            "safety_temperature": self.coordinator.data.get("dhwScheduleSafetyTemperature"),
+        }
 
 
 class DhwTargetSensor(WeheatEntity, SensorEntity):

@@ -26,6 +26,22 @@
       }
     }
   },
+  "selector": {
+    "weekday": {
+      "options": {"monday": "Monday", "tuesday": "Tuesday", "wednesday": "Wednesday", "thursday": "Thursday", "friday": "Friday", "saturday": "Saturday", "sunday": "Sunday"}
+    }
+  },
+  "services": {
+    "set_dhw_schedule": {
+      "name": "Set hot-water schedule",
+      "description": "Replace the manual hot-water schedule of the selected weekdays. The complete week is always submitted; other weekdays are re-sent unchanged from the latest readback. Times are device-local, on whole quarter hours; outside the periods only the safety temperature applies. Does not change the hot-water mode: use the Hot-water mode select for that.",
+      "fields": {
+        "config_entry_id": {"name": "Weheat installation", "description": "The Weheat Control entry to update."},
+        "days": {"name": "Weekdays", "description": "Weekdays that get exactly these periods. Other weekdays keep their current periods."},
+        "periods": {"name": "Periods", "description": "Periods with a hot-water target: start, end (00:00 means midnight) and temperature (40–60 °C, 0.5 °C steps). Leave empty to clear the selected weekdays."}
+      }
+    }
+  },
   "config": {
     "step": {
       "login": {

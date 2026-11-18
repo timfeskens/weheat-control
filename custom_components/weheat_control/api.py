@@ -89,6 +89,8 @@ class Tokens:
 class Installation:
     id: str
     board_id: str
+    # installationSystem.dhwComfortPreference; not part of the settings readback.
+    dhw_comfort_preference: int | None = None
 
 
 def login_request() -> tuple[str, str, str]:
@@ -258,7 +260,15 @@ class WeheatApi:
             item = object_value(raw)
             pump = item.get("heatPump")
             if isinstance(pump, dict) and pump.get("controlBoardId") is not None:
-                result.append(Installation(identifier(item.get("id")), identifier(pump.get("controlBoardId"))))
+                system = item.get("installationSystem")
+                comfort = system.get("dhwComfortPreference") if isinstance(system, dict) else None
+                result.append(
+                    Installation(
+                        identifier(item.get("id")),
+                        identifier(pump.get("controlBoardId")),
+                        comfort if type(comfort) is int else None,
+                    )
+                )
         return result
 
     async def settings(self, installation_id: str) -> Settings:
